@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Visionneuse 360° — Prototype Bloc 2</title>
+<style>
+  :root {
+    --bg: #0a0c10;
+    --panel: #12151c;
+    --panel-border: #232838;
+    --navy: #21295c;
+    --teal: #18c29c;
+    --teal-dim: #18c29c55;
+    --amber: #f0a84e;
+    --text: #e7eaf0;
+    --muted: #8b93a6;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    overflow: hidden;
+  }
+
+  #viewer { position: fixed; inset: 0; }
+  #viewer canvas { display: block; touch-action: none; }
+
+  /* ---------- Overlay haut : titre + boussole ---------- */
+  #hud-top {
+    position: fixed; top: 0; left: 0; right: 0;
+    display: flex; justify-content: space-between; align-items: flex-start;
+    padding: 22px 26px;
+    pointer-events: none;
+    z-index: 10;
+    background: linear-gradient(to bottom, rgba(10,12,16,0.85), transparent);
+  }
+
+  #title-block { pointer-events: none; }
+  #title-block .eyebrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--teal); margin-bottom: 4px;
+  }
+  #title-block h1 {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 20px; font-weight: 600; margin: 0 0 4px 0;
+    letter-spacing: -0.01em;
+  }
+  #title-block p {
+    font-size: 12.5px; color: var(--muted); margin: 0; max-width: 380px;
+  }
+
+  #compass {
+    pointer-events: none;
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+  }
+  #compass svg { width: 64px; height: 64px; }
+  #compass .deg {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px; color: var(--text);
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 20px;
+    padding: 3px 10px;
+  }
+  #compass .deg span { color: var(--teal); }
+
+  /* ---------- Panneau de scènes (gauche) ---------- */
+  #scene-panel {
+    position: fixed; top: 100px; left: 26px;
+    width: 220px;
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 12px;
+    padding: 12px;
+    z-index: 10;
+    max-height: 60vh;
+    overflow-y: auto;
+  }
+  #scene-panel .panel-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 8px;
+  }
+  .scene-item {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 6px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-size: 12.5px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    margin-bottom: 4px;
+    transition: background 0.15s ease;
+  }
+  .scene-item:hover { background: #ffffff08; }
+  .scene-item.active { border-color: var(--teal); color: var(--teal); background: #18c29c14; }
+  .scene-item .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .scene-item .remove {
+    opacity: 0.5; font-size: 13px; padding: 0 4px;
+  }
+  .scene-item .remove:hover { opacity: 1; color: #ff6b6b; }
+  #scene-empty { font-size: 12px; color: var(--muted); padding: 6px 2px; }
+
+  /* ---------- Barre de contrôle basse ---------- */
+  #hud-bottom {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    display: flex; justify-content: center;
+    padding: 20px;
+    z-index: 10;
+    background: linear-gradient(to top, rgba(10,12,16,0.9), transparent);
+  }
+
+  #controls {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 14px;
+    padding: 10px 14px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 94vw;
+  }
+
+  .btn {
+    display: flex; align-items: center; gap: 6px;
+    background: transparent;
+    border: 1px solid var(--panel-border);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 12.5px;
+    font-weight: 500;
+    padding: 8px 13px;
+    border-radius: 9px;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+    white-space: nowrap;
+  }
+  .btn:hover { border-color: var(--teal-dim); background: #ffffff08; }
+  .btn.active { border-color: var(--teal); color: var(--teal); background: #18c29c14; }
+  .btn.active.edit-mode { border-color: var(--amber); color: var(--amber); background: #f0a84e14; }
+  .btn:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+
+  .divider { width: 1px; height: 22px; background: var(--panel-border); }
+
+  #fov-row { display: flex; align-items: center; gap: 8px; padding: 0 4px; }
+  #fov-row label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px; color: var(--muted); letter-spacing: 0.05em;
+  }
+  #fov-slider { width: 90px; accent-color: var(--teal); cursor: pointer; }
+
+  #file-input { display: none; }
+
+  /* ---------- Chargement ---------- */
+  #loading {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column; gap: 10px;
+    background: var(--bg);
+    z-index: 20;
+    transition: opacity 0.4s ease;
+  }
+  #loading .ring {
+    width: 34px; height: 34px;
+    border: 2.5px solid var(--panel-border);
+    border-top-color: var(--teal);
+    border-radius: 50%;
+    animation: spin 0.9s linear infinite;
+  }
+  #loading p {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11.5px; color: var(--muted); letter-spacing: 0.05em;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---------- Zone de dépôt ---------- */
+  #dropzone {
+    position: fixed; inset: 0; z-index: 30;
+    display: none; align-items: center; justify-content: center;
+    background: rgba(10,12,16,0.88);
+    border: 2px dashed var(--teal);
+    margin: 14px;
+    border-radius: 16px;
+  }
+  #dropzone.show { display: flex; }
+  #dropzone span { font-family: 'Space Grotesk', sans-serif; font-size: 16px; color: var(--teal); }
+
+  #toast {
+    position: fixed; bottom: 92px; left: 50%; transform: translateX(-50%);
+    background: var(--panel); border: 1px solid var(--panel-border);
+    color: var(--text); font-size: 12px; padding: 8px 14px; border-radius: 8px;
+    z-index: 15; opacity: 0; pointer-events: none; transition: opacity 0.25s ease;
+    max-width: 80vw; text-align: center;
+  }
+  #toast.show { opacity: 1; }
+
+  /* ---------- Popup de sélection de cible (mode édition) ---------- */
+  #hotspot-popup {
+    position: fixed; z-index: 40; display: none;
+    background: var(--panel); border: 1px solid var(--teal);
+    border-radius: 10px; padding: 10px; width: 220px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  }
+  #hotspot-popup.show { display: block; }
+  #hotspot-popup .popup-title {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--muted); margin-bottom: 8px;
+  }
+  #hotspot-popup select, #hotspot-popup input {
+    width: 100%; background: #0a0c10; border: 1px solid var(--panel-border);
+    color: var(--text); border-radius: 6px; padding: 6px 8px; font-size: 12.5px;
+    margin-bottom: 8px; font-family: inherit;
+  }
+  #hotspot-popup .popup-actions { display: flex; gap: 6px; }
+  #hotspot-popup .popup-actions .btn { flex: 1; justify-content: center; padding: 6px; font-size: 12px; }
+
+  @media (max-width: 640px) {
+    #title-block p { display: none; }
+    #compass { transform: scale(0.85); }
+    #scene-panel { width: 160px; top: 90px; left: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="viewer"></div>
+
+<div id="loading">
+  <div class="ring"></div>
+  <p>Initialisation de la scène équirectangulaire…</p>
+</div>
+
+<div id="dropzone"><span>Déposez un ou plusieurs panoramas équirectangulaires ici</span></div>
+<div id="toast"></div>
+
+<div id="hotspot-popup">
+  <div class="popup-title">Relier vers…</div>
+  <select id="popup-target"></select>
+  <input type="text" id="popup-label" placeholder="Libellé (optionnel)">
+  <div class="popup-actions">
+    <button class="btn" id="popup-cancel">Annuler</button>
+    <button class="btn active" id="popup-confirm">Créer</button>
+  </div>
+</div>
+
+<div id="hud-top">
+  <div id="title-block">
+    <div class="eyebrow">Bloc 2 — Rendu 360°</div>
+    <h1>Visionneuse panoramique</h1>
+    <p>Chargez un ou plusieurs panoramas équirectangulaires (ratio 2:1). Activez le
+       mode édition pour placer des points de navigation (hotspots) entre les scènes.</p>
+  </div>
+
+  <div id="compass">
+    <svg viewBox="0 0 64 64">
+      <circle cx="32" cy="32" r="29" fill="none" stroke="#232838" stroke-width="2"/>
+      <text x="32" y="10" fill="#8b93a6" font-size="8" font-family="JetBrains Mono, monospace" text-anchor="middle">N</text>
+      <text x="32" y="59" fill="#8b93a6" font-size="8" font-family="JetBrains Mono, monospace" text-anchor="middle">S</text>
+      <text x="8" y="35" fill="#8b93a6" font-size="8" font-family="JetBrains Mono, monospace" text-anchor="middle">O</text>
+      <text x="56" y="35" fill="#8b93a6" font-size="8" font-family="JetBrains Mono, monospace" text-anchor="middle">E</text>
+      <g id="needle" transform="rotate(0 32 32)">
+        <line x1="32" y1="32" x2="32" y2="12" stroke="#18c29c" stroke-width="2.5" stroke-linecap="round"/>
+        <circle cx="32" cy="32" r="3" fill="#18c29c"/>
+      </g>
+    </svg>
+    <div class="deg"><span id="deg-value">000</span>°</div>
+  </div>
+</div>
+
+<div id="scene-panel">
+  <div class="panel-title">Scènes chargées</div>
+  <div id="scene-list"><div id="scene-empty">Aucune scène — chargez une image</div></div>
+</div>
+
+<div id="hud-bottom">
+  <div id="controls">
+    <button class="btn" id="btn-load">📁 Charger panorama(s)</button>
+    <input type="file" id="file-input" accept="image/*" multiple>
+    <div class="divider"></div>
+    <button class="btn" id="btn-edit">✎ Mode édition hotspots</button>
+    <button class="btn" id="btn-export">⬇ Exporter config (JSON)</button>
+    <div class="divider"></div>
+    <button class="btn" id="btn-autorotate">↻ Rotation auto</button>
+    <div id="fov-row">
+      <label>ZOOM</label>
+      <input type="range" id="fov-slider" min="30" max="100" value="75">
+    </div>
+    <div class="divider"></div>
+    <button class="btn" id="btn-fullscreen">⛶ Plein écran</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  if (typeof THREE === "undefined") {
+    document.getElementById("loading").innerHTML =
+      '<p style="color:#ff6b6b;max-width:420px;text-align:center;line-height:1.5;">' +
+      "Impossible de charger Three.js depuis le CDN (cdnjs.cloudflare.com / cdn.jsdelivr.net).<br>" +
+      "Vérifiez votre connexion internet, ou qu'aucun proxy/pare-feu ne bloque ces domaines." +
+      "</p>";
+    return;
+  }
+
+  // ============================================================
+  // 1. Scène de base — sphère intérieure + caméra au centre
+  //    (cf. Cahier des charges §4.4 — cas équirectangulaire)
+  // ============================================================
+  const viewerEl = document.getElementById("viewer");
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+  camera.position.set(0, 0, 0.1);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  viewerEl.appendChild(renderer.domElement);
+
+  const geometry = new THREE.SphereGeometry(500, 64, 40);
+  geometry.scale(-1, 1, 1);
+
+  const material = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const sphere = new THREE.Mesh(geometry, material);
+  scene.add(sphere);
+
+  const hotspotGroup = new THREE.Group();
+  scene.add(hotspotGroup);
+
+  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enablePan = false;
+  controls.enableZoom = false;
+  controls.rotateSpeed = -0.35;
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.autoRotateSpeed = 0.6;
+
+  // ============================================================
+  // 2. Modèle de données : scènes multiples + hotspots
+  // ============================================================
+  const scenes = {};        // id -> { id, name, texture, hotspots: [{yaw, pitch, targetId, label}] }
+  let sceneOrder = [];       // ordre d'affichage dans le panneau
+  let currentSceneId = null;
+  let editMode = false;
+  let sceneCounter = 0;
+
+  function buildCalibrationTexture() {
+    const w = 2048, h = 1024;
+    const canvas = document.createElement("canvas");
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, "#12151c"); grad.addColorStop(0.5, "#1c2130"); grad.addColorStop(1, "#12151c");
+    ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = "#18c29c33"; ctx.lineWidth = 1;
+    for (let lon = 0; lon <= 360; lon += 15) {
+      const x = (lon / 360) * w;
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+    }
+    for (let lat = -90; lat <= 90; lat += 15) {
+      const y = ((90 - lat) / 180) * h;
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+    }
+    ctx.strokeStyle = "#18c29c"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2); ctx.stroke();
+    ctx.fillStyle = "#e7eaf0"; ctx.font = "600 26px 'Space Grotesk', sans-serif"; ctx.textAlign = "center";
+    [["N", 0], ["E", 90], ["S", 180], ["O", 270]].forEach(([label, lon]) => {
+      ctx.fillText(label, (lon / 360) * w, h / 2 - 18);
+    });
+    ctx.font = "500 15px 'JetBrains Mono', monospace"; ctx.fillStyle = "#8b93a6";
+    ctx.fillText("GRILLE DE CALIBRATION — 15° / division", w / 2, 40);
+    ctx.fillText("chargez votre panorama équirectangulaire", w / 2, h - 24);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.encoding = THREE.sRGBEncoding;
+    return texture;
+  }
+
+  // Scène par défaut (grille de calibration) — toujours présente comme fallback
+  const defaultScene = {
+    id: "__default__", name: "Grille de calibration",
+    texture: buildCalibrationTexture(), hotspots: [], isDefault: true,
+  };
+  scenes[defaultScene.id] = defaultScene;
+  currentSceneId = defaultScene.id;
+  material.map = defaultScene.texture;
+  material.needsUpdate = true;
+
+  // ============================================================
+  // 3. Conversion angle <-> position 3D sur la sphère
+  // ============================================================
+  function yawPitchToVector3(yaw, pitch, radius) {
+    radius = radius || 480;
+    const y = Math.sin(pitch) * radius;
+    const r = Math.cos(pitch) * radius;
+    const x = Math.sin(yaw) * r;
+    const z = Math.cos(yaw) * r;
+    return new THREE.Vector3(x, y, z);
+  }
+  function vector3ToYawPitch(v) {
+    const dir = v.clone().normalize();
+    return { yaw: Math.atan2(dir.x, dir.z), pitch: Math.asin(Math.max(-1, Math.min(1, dir.y))) };
+  }
+
+  // ============================================================
+  // 4. Marqueurs de hotspot (sprites toujours face caméra)
+  // ============================================================
+  function createMarkerTexture(color) {
+    const size = 128;
+    const canvas = document.createElement("canvas");
+    canvas.width = size; canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    const cx = size / 2, cy = size / 2;
+    const grad = ctx.createRadialGradient(cx, cy, 4, cx, cy, size / 2);
+    grad.addColorStop(0, color); grad.addColorStop(0.35, color + "aa"); grad.addColorStop(1, color + "00");
+    ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(cx, cy, size / 2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx, cy, 12, 0, Math.PI * 2);
+    ctx.fillStyle = "#0a0c10"; ctx.fill();
+    ctx.lineWidth = 3; ctx.strokeStyle = color; ctx.stroke();
+    return new THREE.CanvasTexture(canvas);
+  }
+  const markerTextureNav = createMarkerTexture("#18c29c");
+  const markerTextureEdit = createMarkerTexture("#f0a84e");
+
+  function makeLabelSprite(text) {
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    ctx.font = "600 28px 'Space Grotesk', sans-serif";
+    const padding = 20;
+    const textWidth = ctx.measureText(text).width;
+    canvas.width = textWidth + padding * 2;
+    canvas.height = 44;
+    const ctx2 = canvas.getContext("2d");
+    ctx2.font = "600 28px 'Space Grotesk', sans-serif";
+    ctx2.fillStyle = "rgba(10,12,16,0.82)";
+    ctx2.roundRect ? ctx2.roundRect(0, 0, canvas.width, canvas.height, 10) : ctx2.rect(0, 0, canvas.width, canvas.height);
+    ctx2.fill();
+    ctx2.fillStyle = "#e7eaf0";
+    ctx2.textBaseline = "middle";
+    ctx2.fillText(text, padding, canvas.height / 2 + 2);
+    const tex = new THREE.CanvasTexture(canvas);
+    const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true });
+    const sprite = new THREE.Sprite(mat);
+    const scaleFactor = 0.09;
+    sprite.scale.set(canvas.width * scaleFactor, canvas.height * scaleFactor, 1);
+    return sprite;
+  }
+
+  function renderHotspotsForCurrentScene() {
+    hotspotGroup.clear();
+    const s = scenes[currentSceneId];
+    if (!s) return;
+    s.hotspots.forEach((hs, idx) => {
+      const pos = yawPitchToVector3(hs.yaw, hs.pitch);
+      const iconMat = new THREE.SpriteMaterial({
+        map: editMode ? markerTextureEdit : markerTextureNav,
+        depthTest: false, transparent: true,
+      });
+      const icon = new THREE.Sprite(iconMat);
+      icon.scale.set(28, 28, 1);
+      icon.position.copy(pos);
+      icon.userData = { hotspotIndex: idx, targetId: hs.targetId };
+      hotspotGroup.add(icon);
+
+      const label = makeLabelSprite(hs.label || (scenes[hs.targetId] ? scenes[hs.targetId].name : "?"));
+      label.position.copy(pos.clone().add(new THREE.Vector3(0, -26, 0)));
+      label.userData = { hotspotIndex: idx, targetId: hs.targetId, isLabel: true };
+      hotspotGroup.add(label);
+    });
+  }
+
+  // ============================================================
+  // 5. Gestion des scènes (panneau, activation, suppression)
+  // ============================================================
+  const sceneListEl = document.getElementById("scene-list");
+
+  function refreshScenePanel() {
+    sceneListEl.innerHTML = "";
+    const realScenes = sceneOrder.filter((id) => !scenes[id].isDefault);
+    if (realScenes.length === 0) {
+      sceneListEl.innerHTML = '<div id="scene-empty">Aucune scène — chargez une image</div>';
+      return;
+    }
+    realScenes.forEach((id) => {
+      const s = scenes[id];
+      const item = document.createElement("div");
+      item.className = "scene-item" + (id === currentSceneId ? " active" : "");
+      item.innerHTML = `<span class="name">${s.name}</span><span class="remove" title="Retirer">✕</span>`;
+      item.querySelector(".name").addEventListener("click", () => activateScene(id));
+      item.querySelector(".remove").addEventListener("click", (e) => {
+        e.stopPropagation();
+        removeScene(id);
+      });
+      sceneListEl.appendChild(item);
+    });
+  }
+
+  function activateScene(id) {
+    if (!scenes[id]) return;
+    currentSceneId = id;
+    material.map = scenes[id].texture;
+    material.needsUpdate = true;
+    renderHotspotsForCurrentScene();
+    refreshScenePanel();
+  }
+
+  function removeScene(id) {
+    if (scenes[id].isDefault) return;
+    delete scenes[id];
+    sceneOrder = sceneOrder.filter((s) => s !== id);
+    // Nettoyage des hotspots pointant vers la scène supprimée
+    Object.values(scenes).forEach((s) => {
+      s.hotspots = s.hotspots.filter((h) => h.targetId !== id);
+    });
+    if (currentSceneId === id) {
+      activateScene(sceneOrder[0] || defaultScene.id);
+    } else {
+      refreshScenePanel();
+    }
+  }
+
+  function addSceneFromTexture(texture, name) {
+    sceneCounter += 1;
+    const id = "scene_" + sceneCounter;
+    scenes[id] = { id, name, texture, hotspots: [] };
+    sceneOrder.push(id);
+    refreshScenePanel();
+    return id;
+  }
+
+  // ============================================================
+  // 6. Chargement de fichiers (multi-fichiers + drag & drop)
+  // ============================================================
+  const textureLoader = new THREE.TextureLoader();
+  const loadingEl = document.getElementById("loading");
+  const toastEl = document.getElementById("toast");
+
+  function showToast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add("show");
+    setTimeout(() => toastEl.classList.remove("show"), 2600);
+  }
+
+  function loadSingleFile(file) {
+    return new Promise((resolve) => {
+      if (!file || !file.type.startsWith("image/")) {
+        showToast("Fichier ignoré (non image) : " + (file ? file.name : "?"));
+        resolve(null);
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        textureLoader.load(
+          e.target.result,
+          (texture) => {
+            texture.encoding = THREE.sRGBEncoding;
+            const name = file.name.replace(/\.[^.]+$/, "");
+            const id = addSceneFromTexture(texture, name);
+            resolve(id);
+          },
+          undefined,
+          (err) => {
+            console.error("Échec du chargement de la texture :", file.name, err);
+            showToast("Échec du chargement — " + file.name);
+            resolve(null);
+          }
+        );
+      };
+      reader.onerror = () => { showToast("Impossible de lire : " + file.name); resolve(null); };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function handleFiles(fileList) {
+    const files = Array.from(fileList || []);
+    if (files.length === 0) return;
+    loadingEl.style.opacity = "1";
+    loadingEl.style.pointerEvents = "auto";
+    let lastId = null;
+    for (const file of files) {
+      const id = await loadSingleFile(file);
+      if (id) lastId = id;
+    }
+    loadingEl.style.opacity = "0";
+    loadingEl.style.pointerEvents = "none";
+    if (lastId) {
+      activateScene(lastId);
+      showToast(files.length > 1 ? files.length + " panoramas chargés" : "Panorama chargé");
+    }
+  }
+
+  document.getElementById("btn-load").addEventListener("click", () => {
+    document.getElementById("file-input").click();
+  });
+  document.getElementById("file-input").addEventListener("change", (e) => handleFiles(e.target.files));
+
+  const dropzone = document.getElementById("dropzone");
+  let dragCounter = 0;
+  window.addEventListener("dragenter", (e) => { e.preventDefault(); dragCounter++; dropzone.classList.add("show"); });
+  window.addEventListener("dragleave", (e) => {
+    e.preventDefault(); dragCounter--;
+    if (dragCounter <= 0) { dragCounter = 0; dropzone.classList.remove("show"); }
+  });
+  window.addEventListener("dragover", (e) => e.preventDefault());
+  window.addEventListener("drop", (e) => {
+    e.preventDefault(); dragCounter = 0; dropzone.classList.remove("show");
+    if (e.dataTransfer.files) handleFiles(e.dataTransfer.files);
+  });
+
+  // ============================================================
+  // 7. Mode édition hotspots — raycasting sur la sphère
+  // ============================================================
+  const btnEdit = document.getElementById("btn-edit");
+  const raycaster = new THREE.Raycaster();
+  const mouseNDC = new THREE.Vector2();
+  const popup = document.getElementById("hotspot-popup");
+  const popupTarget = document.getElementById("popup-target");
+  const popupLabel = document.getElementById("popup-label");
+  let pendingYawPitch = null;
+
+  btnEdit.addEventListener("click", () => {
+    editMode = !editMode;
+    btnEdit.classList.toggle("active", editMode);
+    btnEdit.classList.toggle("edit-mode", editMode);
+    controls.autoRotate = false;
+    document.getElementById("btn-autorotate").classList.remove("active");
+    renderHotspotsForCurrentScene();
+    showToast(editMode
+      ? "Mode édition : cliquez sur l'image pour placer un hotspot, ou sur un marqueur pour le retirer"
+      : "Mode navigation");
+  });
+
+  function openHotspotPopup(clientX, clientY, yaw, pitch) {
+    const others = sceneOrder.filter((id) => id !== currentSceneId);
+    if (others.length === 0) {
+      showToast("Chargez au moins une autre scène avant de créer un hotspot");
+      return;
+    }
+    pendingYawPitch = { yaw, pitch };
+    popupTarget.innerHTML = others.map((id) => `<option value="${id}">${scenes[id].name}</option>`).join("");
+    popupLabel.value = "";
+    popup.style.left = Math.min(clientX, window.innerWidth - 240) + "px";
+    popup.style.top = Math.min(clientY, window.innerHeight - 160) + "px";
+    popup.classList.add("show");
+  }
+  function closeHotspotPopup() { popup.classList.remove("show"); pendingYawPitch = null; }
+
+  document.getElementById("popup-cancel").addEventListener("click", closeHotspotPopup);
+  document.getElementById("popup-confirm").addEventListener("click", () => {
+    if (!pendingYawPitch) return;
+    const targetId = popupTarget.value;
+    const label = popupLabel.value.trim() || scenes[targetId].name;
+    scenes[currentSceneId].hotspots.push({
+      yaw: pendingYawPitch.yaw, pitch: pendingYawPitch.pitch, targetId, label,
+    });
+    closeHotspotPopup();
+    renderHotspotsForCurrentScene();
+    showToast("Hotspot créé vers « " + label + " »");
+  });
+
+  renderer.domElement.addEventListener("click", (event) => {
+    if (popup.classList.contains("show")) return;
+    mouseNDC.x = (event.clientX / window.innerWidth) * 2 - 1;
+    mouseNDC.y = -(event.clientY / window.innerHeight) * 2 + 1;
+    raycaster.setFromCamera(mouseNDC, camera);
+
+    // Priorité aux marqueurs existants (icônes uniquement, pas les libellés)
+    const markerHits = raycaster.intersectObjects(
+      hotspotGroup.children.filter((c) => !c.userData.isLabel), false
+    );
+
+    if (markerHits.length > 0) {
+      const targetId = markerHits[0].object.userData.targetId;
+      if (editMode) {
+        const idx = markerHits[0].object.userData.hotspotIndex;
+        scenes[currentSceneId].hotspots.splice(idx, 1);
+        renderHotspotsForCurrentScene();
+        showToast("Hotspot supprimé");
+      } else if (scenes[targetId]) {
+        activateScene(targetId);
+        showToast("→ " + scenes[targetId].name);
+      }
+      return;
+    }
+
+    if (editMode) {
+      const sphereHits = raycaster.intersectObject(sphere, false);
+      if (sphereHits.length > 0) {
+        const { yaw, pitch } = vector3ToYawPitch(sphereHits[0].point);
+        openHotspotPopup(event.clientX, event.clientY, yaw, pitch);
+      }
+    }
+  });
+
+  // ============================================================
+  // 8. Export de la configuration (JSON) — cf. §4.5 note technique
+  // ============================================================
+  document.getElementById("btn-export").addEventListener("click", () => {
+    const realScenes = sceneOrder.filter((id) => !scenes[id].isDefault);
+    if (realScenes.length === 0) {
+      showToast("Aucune scène à exporter");
+      return;
+    }
+    const config = {
+      generated_by: "panorama_viewer.html — Bloc 2",
+      scenes: realScenes.map((id) => ({
+        id,
+        name: scenes[id].name,
+        image_ref: scenes[id].name + "_standard_equirect.jpg",
+        hotspots: scenes[id].hotspots.map((h) => ({
+          yaw_deg: Math.round(h.yaw * 180 / Math.PI),
+          pitch_deg: Math.round(h.pitch * 180 / Math.PI),
+          target: h.targetId,
+          label: h.label,
+        })),
+      })),
+    };
+    const blob = new Blob([JSON.stringify(config, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "panorama_scenes_config.json";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast("Configuration exportée (image_ref à adapter à vos fichiers réels)");
+  });
+
+  // ============================================================
+  // 9. Contrôles UI : rotation auto, FOV, plein écran
+  // ============================================================
+  const btnAutorotate = document.getElementById("btn-autorotate");
+  btnAutorotate.addEventListener("click", () => {
+    controls.autoRotate = !controls.autoRotate;
+    btnAutorotate.classList.toggle("active", controls.autoRotate);
+  });
+
+  const fovSlider = document.getElementById("fov-slider");
+  fovSlider.addEventListener("input", () => {
+    camera.fov = Number(fovSlider.value);
+    camera.updateProjectionMatrix();
+  });
+
+  document.getElementById("btn-fullscreen").addEventListener("click", () => {
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
+    else document.exitFullscreen();
+  });
+
+  // ============================================================
+  // 10. Boussole
+  // ============================================================
+  const needle = document.getElementById("needle");
+  const degValue = document.getElementById("deg-value");
+  function updateCompass() {
+    const azimuth = controls.getAzimuthalAngle();
+    let deg = Math.round((-azimuth * 180 / Math.PI + 360) % 360);
+    needle.setAttribute("transform", `rotate(${deg} 32 32)`);
+    degValue.textContent = String(deg).padStart(3, "0");
+  }
+
+  // ============================================================
+  // 11. Boucle de rendu
+  // ============================================================
+  function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+    updateCompass();
+    renderer.render(scene, camera);
+  }
+
+  window.addEventListener("resize", () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  refreshScenePanel();
+
+  requestAnimationFrame(() => {
+    setTimeout(() => { loadingEl.style.opacity = "0"; loadingEl.style.pointerEvents = "none"; }, 250);
+  });
+
+  animate();
+})();
+</script>
+</body>
+</html>
