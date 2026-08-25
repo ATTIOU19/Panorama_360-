@@ -297,6 +297,12 @@
   </div>
 </div>
 
+<!-- AUTO_LOAD_PLACEHOLDER --><!--
+  Streamlit (ou tout autre intégrateur) peut remplacer ce commentaire par :
+  <script>window.__AUTO_PANORAMA__ = {dataURL: "data:image/jpeg;base64,...", name: "mon_panorama"};</script>
+  pour que la visionneuse charge et active automatiquement ce panorama au démarrage,
+  sans action manuelle de l'utilisateur.
+-->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script>
@@ -783,6 +789,31 @@
   });
 
   refreshScenePanel();
+
+  // Chargement automatique d'un panorama pré-injecté (ex. par Streamlit après
+  // exécution du pipeline de stitching) — voir AUTO_LOAD_PLACEHOLDER ci-dessus.
+  if (window.__AUTO_PANORAMA__ && window.__AUTO_PANORAMA__.dataURL) {
+    loadingEl.style.opacity = "1";
+    loadingEl.style.pointerEvents = "auto";
+    textureLoader.load(
+      window.__AUTO_PANORAMA__.dataURL,
+      (texture) => {
+        texture.encoding = THREE.sRGBEncoding;
+        const id = addSceneFromTexture(texture, window.__AUTO_PANORAMA__.name || "panorama");
+        activateScene(id);
+        loadingEl.style.opacity = "0";
+        loadingEl.style.pointerEvents = "none";
+        showToast("Panorama assemblé chargé automatiquement");
+      },
+      undefined,
+      (err) => {
+        console.error("Échec du chargement du panorama auto-injecté :", err);
+        loadingEl.style.opacity = "0";
+        loadingEl.style.pointerEvents = "none";
+        showToast("Échec du chargement automatique — voir console (F12)");
+      }
+    );
+  }
 
   requestAnimationFrame(() => {
     setTimeout(() => { loadingEl.style.opacity = "0"; loadingEl.style.pointerEvents = "none"; }, 250);
